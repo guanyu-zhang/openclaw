@@ -42,10 +42,11 @@ export function parseConfigPath(raw: string): {
         if (currentSegment.trim()) {
           parts.push(currentSegment.trim());
           currentSegment = "";
-        } else if (parts.length === 0 || trimmed[i - 1] === ".") {
-          return { ok: false, error: "Invalid path. Use dot notation (e.g. foo.bar)." };
         } else if (currentSegment.length > 0) {
-          // Spaces between dots
+          // Whitespace-only segment between dots (e.g. "foo. .bar")
+          return { ok: false, error: "Invalid path. Use dot notation (e.g. foo.bar)." };
+        } else if (parts.length === 0 || trimmed[i - 1] === ".") {
+          // Leading dot or consecutive dots (e.g. ".foo" or "foo..bar")
           return { ok: false, error: "Invalid path. Use dot notation (e.g. foo.bar)." };
         }
       } else {
