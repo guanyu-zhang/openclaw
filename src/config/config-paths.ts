@@ -15,13 +15,95 @@ export function parseConfigPath(raw: string): {
       error: "Invalid path. Use dot notation (e.g. foo.bar).",
     };
   }
-  const parts = trimmed.split(".").map((part) => part.trim());
+
+  const parts: string[] = [];
+  let currentSegment = "";
+  let state: "bare" | "bracket_unquoted" | "bracket_single" | "bracket_double" = "bare";
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const char = trimmed[i];
+
+    if (state === "bare") {
+      if (char === "[") {
+        if (currentSegment.trim()) {
+          parts.push(currentSegment.trim());
+        }
+        currentSegment = "";
+        if (trimmed[i + 1] === '"') {
+          state = "bracket_double";
+          i++;
+        } else if (trimmed[i + 1] === "'") {
+          state = "bracket_single";
+          i++;
+        } else {
+          state = "bracket_unquoted";
+        }
+      } else if (char === ".") {
+        if (currentSegment.trim()) {
+          parts.push(currentSegment.trim());
+          currentSegment = "";
+        } else if (parts.length === 0 || trimmed[i - 1] === ".") {
+          return { ok: false, error: "Invalid path. Use dot notation (e.g. foo.bar)." };
+        } else if (currentSegment.length > 0) {
+          // Spaces between dots
+          return { ok: false, error: "Invalid path. Use dot notation (e.g. foo.bar)." };
+        }
+      } else {
+        currentSegment += char;
+      }
+    } else if (state === "bracket_double") {
+      if (char === '"' && trimmed[i + 1] === "]") {
+        parts.push(currentSegment);
+        currentSegment = "";
+        state = "bare";
+        i++;
+      } else {
+        currentSegment += char;
+      }
+    } else if (state === "bracket_single") {
+      if (char === "'" && trimmed[i + 1] === "]") {
+        parts.push(currentSegment);
+        currentSegment = "";
+        state = "bare";
+        i++;
+      } else {
+        currentSegment += char;
+      }
+    } else if (state === "bracket_unquoted") {
+      if (char === "]") {
+        parts.push(currentSegment.trim());
+        currentSegment = "";
+        state = "bare";
+      } else {
+        currentSegment += char;
+      }
+    }
+  }
+
+  if (state !== "bare") {
+    return { ok: false, error: "Invalid path. Unclosed bracket." };
+  }
+
+  if (currentSegment.trim()) {
+    parts.push(currentSegment.trim());
+  } else if (trimmed.endsWith(".") || (currentSegment.length > 0 && parts.length === 0)) {
+    return { ok: false, error: "Invalid path. Use dot notation (e.g. foo.bar)." };
+  }
+
+  if (parts.length === 0) {
+    return {
+      ok: false,
+      error: "Invalid path. Use dot notation (e.g. foo.bar).",
+    };
+  }
+
   if (parts.some((part) => !part)) {
     return {
       ok: false,
       error: "Invalid path. Use dot notation (e.g. foo.bar).",
     };
   }
+
   if (parts.some((part) => isBlockedObjectKey(part))) {
     return { ok: false, error: "Invalid path segment." };
   }

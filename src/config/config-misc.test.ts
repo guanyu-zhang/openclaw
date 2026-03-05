@@ -272,6 +272,32 @@ describe("config paths", () => {
     expect(parseConfigPath("prototype.polluted").ok).toBe(false);
   });
 
+  it("parses paths with array bracket notation", () => {
+    expect(parseConfigPath('models.providers["llama.cpp"].baseUrl').path).toEqual([
+      "models",
+      "providers",
+      "llama.cpp",
+      "baseUrl",
+    ]);
+    expect(parseConfigPath("models.providers['llama.cpp'].baseUrl").path).toEqual([
+      "models",
+      "providers",
+      "llama.cpp",
+      "baseUrl",
+    ]);
+    expect(parseConfigPath("foo[bar].baz").path).toEqual(["foo", "bar", "baz"]);
+    expect(parseConfigPath('foo[" bar "]').path).toEqual(["foo", " bar "]);
+  });
+
+  it("rejects invalid path formats", () => {
+    expect(parseConfigPath("foo..bar").ok).toBe(false);
+    expect(parseConfigPath("foo. .bar").ok).toBe(false);
+    expect(parseConfigPath("foo.bar.").ok).toBe(false);
+    expect(parseConfigPath('foo["bar').ok).toBe(false);
+    expect(parseConfigPath("foo[]").ok).toBe(false);
+    expect(parseConfigPath(".foo").ok).toBe(false);
+  });
+
   it("sets, gets, and unsets nested values", () => {
     const root: Record<string, unknown> = {};
     const parsed = parseConfigPath("foo.bar");
