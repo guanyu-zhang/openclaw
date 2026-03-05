@@ -198,7 +198,7 @@ openclaw models status
 
 ```bash
 # 正确：方括号语法可以保护句号作为一个完整的 Key
-/config set 'models.providers["llama.cpp"].baseUrl' http://127.0.0.1:8080
+/config set 'models.providers["llama.cpp"].baseUrl'=http://127.0.0.1:8080
 
 # 错误：路径解析器会将其错误地按句号分割为嵌套对象
 /config set models.providers.llama.cpp.baseUrl http://127.0.0.1:8080
