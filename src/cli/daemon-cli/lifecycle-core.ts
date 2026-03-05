@@ -5,6 +5,10 @@ import { checkTokenDrift } from "../../daemon/service-audit.js";
 import type { GatewayService } from "../../daemon/service.js";
 import { renderSystemdUnavailableHints } from "../../daemon/systemd-hints.js";
 import { isSystemdUserServiceAvailable } from "../../daemon/systemd.js";
+import {
+  isGatewaySecretRefUnavailableError,
+  resolveGatewayCredentialsFromConfig,
+} from "../../gateway/credentials.js";
 import { isWSL } from "../../infra/wsl.js";
 import { defaultRuntime } from "../../runtime.js";
 import {
@@ -280,10 +284,11 @@ export async function runServiceRestart(params: {
       const command = await params.service.readCommand(process.env);
       const serviceToken = command?.environment?.OPENCLAW_GATEWAY_TOKEN;
       const cfg = loadConfig();
-      const configToken =
-        cfg.gateway?.auth?.token ||
-        process.env.OPENCLAW_GATEWAY_TOKEN ||
-        process.env.CLAWDBOT_GATEWAY_TOKEN;
+      const configToken = resolveGatewayCredentialsFromConfig({
+        cfg,
+        env: process.env,
+        modeOverride: "local",
+      }).token;
       const driftIssue = checkTokenDrift({ serviceToken, configToken });
       if (driftIssue) {
         const warning = driftIssue.detail
@@ -297,8 +302,15 @@ export async function runServiceRestart(params: {
           }
         }
       }
-    } catch {
-      // Non-fatal: token drift check is best-effort
+    } catch (err) {
+      if (isGatewaySecretRefUnavailableError(err, "gateway.auth.token")) {
+        const warning =
+          "Unable to verify gateway token drift: gateway.auth.token SecretRef is configured but unavailable in this command path.";
+        warnings.push(warning);
+        if (!json) {
+          defaultRuntime.log(`\n⚠️  ${warning}\n`);
+        }
+      }
     }
   }
 

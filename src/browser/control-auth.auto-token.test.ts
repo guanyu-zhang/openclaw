@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+import { expectGeneratedTokenPersistedToGatewayAuth } from "../test-utils/auth-token-assertions.js";
 
 const mocks = vi.hoisted(() => ({
   loadConfig: vi.fn<() => OpenClawConfig>(),
@@ -38,12 +39,12 @@ describe("ensureBrowserControlAuth", () => {
     generatedToken?: string;
     auth: { token?: string };
   }) => {
-    expect(result.generatedToken).toMatch(/^[0-9a-f]{48}$/);
-    expect(result.auth.token).toBe(result.generatedToken);
     expect(mocks.writeConfigFile).toHaveBeenCalledTimes(1);
-    const persisted = mocks.writeConfigFile.mock.calls[0]?.[0];
-    expect(persisted?.gateway?.auth?.mode).toBe("token");
-    expect(persisted?.gateway?.auth?.token).toBe(result.generatedToken);
+    expectGeneratedTokenPersistedToGatewayAuth({
+      generatedToken: result.generatedToken,
+      authToken: result.auth.token,
+      persistedConfig: mocks.writeConfigFile.mock.calls[0]?.[0],
+    });
   };
 
   beforeEach(() => {
@@ -129,6 +130,31 @@ describe("ensureBrowserControlAuth", () => {
     const result = await ensureBrowserControlAuth({ cfg, env: {} as NodeJS.ProcessEnv });
 
     expect(result).toEqual({ auth: { token: "latest-token" } });
+    expect(mocks.writeConfigFile).not.toHaveBeenCalled();
+  });
+
+  it("fails when gateway.auth.token SecretRef is unresolved", async () => {
+    const cfg: OpenClawConfig = {
+      gateway: {
+        auth: {
+          mode: "token",
+          token: { source: "env", provider: "default", id: "MISSING_GW_TOKEN" },
+        },
+      },
+      browser: {
+        enabled: true,
+      },
+      secrets: {
+        providers: {
+          default: { source: "env" },
+        },
+      },
+    };
+    mocks.loadConfig.mockReturnValue(cfg);
+
+    await expect(ensureBrowserControlAuth({ cfg, env: {} as NodeJS.ProcessEnv })).rejects.toThrow(
+      /MISSING_GW_TOKEN/i,
+    );
     expect(mocks.writeConfigFile).not.toHaveBeenCalled();
   });
 });

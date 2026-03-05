@@ -36,6 +36,28 @@ vi.mock("../../../discord/monitor/thread-bindings.js", async (importOriginal) =>
 
 const { discordOutbound } = await import("./discord.js");
 
+const DEFAULT_DISCORD_SEND_RESULT = {
+  channel: "discord",
+  messageId: "msg-1",
+  channelId: "ch-1",
+} as const;
+
+function expectThreadBotSend(params: {
+  text: string;
+  result: unknown;
+  options?: Record<string, unknown>;
+}) {
+  expect(hoisted.sendMessageDiscordMock).toHaveBeenCalledWith(
+    "channel:thread-1",
+    params.text,
+    expect.objectContaining({
+      accountId: "default",
+      ...params.options,
+    }),
+  );
+  expect(params.result).toEqual(DEFAULT_DISCORD_SEND_RESULT);
+}
+
 function mockBoundThreadManager() {
   hoisted.getThreadBindingManagerMock.mockReturnValue({
     getByThreadId: () => ({
@@ -113,25 +135,24 @@ describe("discordOutbound", () => {
       threadId: "thread-1",
     });
 
-    expect(hoisted.sendMessageDiscordMock).toHaveBeenCalledWith(
-      "channel:thread-1",
-      "hello",
-      expect.objectContaining({
-        accountId: "default",
-      }),
-    );
-    expect(result).toEqual({
-      channel: "discord",
-      messageId: "msg-1",
-      channelId: "ch-1",
+    expectThreadBotSend({
+      text: "hello",
+      result,
     });
   });
 
   it("uses webhook persona delivery for bound thread text replies", async () => {
     mockBoundThreadManager();
+    const cfg = {
+      channels: {
+        discord: {
+          token: "resolved-token",
+        },
+      },
+    };
 
     const result = await discordOutbound.sendText?.({
-      cfg: {},
+      cfg,
       to: "channel:parent-1",
       text: "hello from persona",
       accountId: "default",
@@ -155,6 +176,10 @@ describe("discordOutbound", () => {
         avatarUrl: "https://example.com/avatar.png",
       }),
     );
+    expect(
+      (hoisted.sendWebhookMessageDiscordMock.mock.calls[0]?.[1] as { cfg?: unknown } | undefined)
+        ?.cfg,
+    ).toBe(cfg);
     expect(hoisted.sendMessageDiscordMock).not.toHaveBeenCalled();
     expect(result).toEqual({
       channel: "discord",
@@ -176,18 +201,10 @@ describe("discordOutbound", () => {
     });
 
     expect(hoisted.sendWebhookMessageDiscordMock).not.toHaveBeenCalled();
-    expect(hoisted.sendMessageDiscordMock).toHaveBeenCalledWith(
-      "channel:thread-1",
-      "silent update",
-      expect.objectContaining({
-        accountId: "default",
-        silent: true,
-      }),
-    );
-    expect(result).toEqual({
-      channel: "discord",
-      messageId: "msg-1",
-      channelId: "ch-1",
+    expectThreadBotSend({
+      text: "silent update",
+      result,
+      options: { silent: true },
     });
   });
 
@@ -204,17 +221,9 @@ describe("discordOutbound", () => {
     });
 
     expect(hoisted.sendWebhookMessageDiscordMock).toHaveBeenCalledTimes(1);
-    expect(hoisted.sendMessageDiscordMock).toHaveBeenCalledWith(
-      "channel:thread-1",
-      "fallback",
-      expect.objectContaining({
-        accountId: "default",
-      }),
-    );
-    expect(result).toEqual({
-      channel: "discord",
-      messageId: "msg-1",
-      channelId: "ch-1",
+    expectThreadBotSend({
+      text: "fallback",
+      result,
     });
   });
 

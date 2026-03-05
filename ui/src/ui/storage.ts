@@ -1,7 +1,8 @@
 const KEY = "openclaw.control.settings.v1";
 
 import { isSupportedLocale } from "../i18n/index.ts";
-import { VALID_THEMES, type ThemeMode } from "./theme.ts";
+import { inferBasePathFromPathname, normalizeBasePath } from "./navigation.ts";
+import type { ThemeMode } from "./theme.ts";
 
 export type UiSettings = {
   gatewayUrl: string;
@@ -20,7 +21,14 @@ export type UiSettings = {
 export function loadSettings(): UiSettings {
   const defaultUrl = (() => {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    return `${proto}://${location.host}`;
+    const configured =
+      typeof window !== "undefined" &&
+      typeof window.__OPENCLAW_CONTROL_UI_BASE_PATH__ === "string" &&
+      window.__OPENCLAW_CONTROL_UI_BASE_PATH__.trim();
+    const basePath = configured
+      ? normalizeBasePath(configured)
+      : inferBasePathFromPathname(location.pathname);
+    return `${proto}://${location.host}${basePath}`;
   })();
 
   const defaults: UiSettings = {
@@ -28,7 +36,7 @@ export function loadSettings(): UiSettings {
     token: "",
     sessionKey: "main",
     lastActiveSessionKey: "main",
-    theme: "dark",
+    theme: "system",
     chatFocusMode: false,
     chatShowThinking: true,
     splitRatio: 0.6,
@@ -57,9 +65,10 @@ export function loadSettings(): UiSettings {
           ? parsed.lastActiveSessionKey.trim()
           : (typeof parsed.sessionKey === "string" && parsed.sessionKey.trim()) ||
             defaults.lastActiveSessionKey,
-      theme: VALID_THEMES.has(parsed.theme as ThemeMode)
-        ? (parsed.theme as ThemeMode)
-        : defaults.theme,
+      theme:
+        parsed.theme === "light" || parsed.theme === "dark" || parsed.theme === "system"
+          ? parsed.theme
+          : defaults.theme,
       chatFocusMode:
         typeof parsed.chatFocusMode === "boolean" ? parsed.chatFocusMode : defaults.chatFocusMode,
       chatShowThinking:

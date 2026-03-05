@@ -1,16 +1,18 @@
 import {
   buildChannelConfigSchema,
+  buildTokenChannelStatusSummary,
   DEFAULT_ACCOUNT_ID,
   LineConfigSchema,
   processLineMessage,
-  resolveRuntimeGroupPolicy,
+  resolveAllowlistProviderRuntimeGroupPolicy,
+  resolveDefaultGroupPolicy,
   type ChannelPlugin,
   type ChannelStatusIssue,
   type OpenClawConfig,
   type LineConfig,
   type LineChannelData,
   type ResolvedLineAccount,
-} from "openclaw/plugin-sdk";
+} from "openclaw/plugin-sdk/line";
 import { getLineRuntime } from "./runtime.js";
 
 // LINE channel metadata
@@ -162,13 +164,11 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
       };
     },
     collectWarnings: ({ account, cfg }) => {
-      const defaultGroupPolicy = cfg.channels?.defaults?.groupPolicy;
-      const { groupPolicy } = resolveRuntimeGroupPolicy({
+      const defaultGroupPolicy = resolveDefaultGroupPolicy(cfg);
+      const { groupPolicy } = resolveAllowlistProviderRuntimeGroupPolicy({
         providerConfigPresent: cfg.channels?.line !== undefined,
         groupPolicy: account.config.groupPolicy,
         defaultGroupPolicy,
-        configuredFallbackPolicy: "allowlist",
-        missingProviderFallbackPolicy: "allowlist",
       });
       if (groupPolicy !== "open") {
         return [];
@@ -372,6 +372,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
           const batch = messages.slice(i, i + 5) as unknown as Parameters<typeof sendBatch>[1];
           const result = await sendBatch(to, batch, {
             verbose: false,
+            cfg,
             accountId: accountId ?? undefined,
           });
           lastResult = { messageId: result.messageId, chatId: result.chatId };
@@ -399,6 +400,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
           const flexContents = lineData.flexMessage.contents as Parameters<typeof sendFlex>[2];
           lastResult = await sendFlex(to, lineData.flexMessage.altText, flexContents, {
             verbose: false,
+            cfg,
             accountId: accountId ?? undefined,
           });
         }
@@ -408,6 +410,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
           if (template) {
             lastResult = await sendTemplate(to, template, {
               verbose: false,
+              cfg,
               accountId: accountId ?? undefined,
             });
           }
@@ -416,6 +419,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
         if (lineData.location) {
           lastResult = await sendLocation(to, lineData.location, {
             verbose: false,
+            cfg,
             accountId: accountId ?? undefined,
           });
         }
@@ -425,6 +429,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
           const flexContents = flexMsg.contents as Parameters<typeof sendFlex>[2];
           lastResult = await sendFlex(to, flexMsg.altText, flexContents, {
             verbose: false,
+            cfg,
             accountId: accountId ?? undefined,
           });
         }
@@ -436,6 +441,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
           lastResult = await runtime.channel.line.sendMessageLine(to, "", {
             verbose: false,
             mediaUrl: url,
+            cfg,
             accountId: accountId ?? undefined,
           });
         }
@@ -447,11 +453,13 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
           if (isLast && hasQuickReplies) {
             lastResult = await sendQuickReplies(to, chunks[i], quickReplies, {
               verbose: false,
+              cfg,
               accountId: accountId ?? undefined,
             });
           } else {
             lastResult = await sendText(to, chunks[i], {
               verbose: false,
+              cfg,
               accountId: accountId ?? undefined,
             });
           }
@@ -513,6 +521,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
           lastResult = await runtime.channel.line.sendMessageLine(to, "", {
             verbose: false,
             mediaUrl: url,
+            cfg,
             accountId: accountId ?? undefined,
           });
         }
@@ -523,7 +532,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
       }
       return { channel: "line", messageId: "empty", chatId: to };
     },
-    sendText: async ({ to, text, accountId }) => {
+    sendText: async ({ cfg, to, text, accountId }) => {
       const runtime = getLineRuntime();
       const sendText = runtime.channel.line.pushMessageLine;
       const sendFlex = runtime.channel.line.pushFlexMessage;
@@ -536,6 +545,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
       if (processed.text.trim()) {
         result = await sendText(to, processed.text, {
           verbose: false,
+          cfg,
           accountId: accountId ?? undefined,
         });
       } else {
@@ -549,17 +559,19 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
         const flexContents = flexMsg.contents as Parameters<typeof sendFlex>[2];
         await sendFlex(to, flexMsg.altText, flexContents, {
           verbose: false,
+          cfg,
           accountId: accountId ?? undefined,
         });
       }
 
       return { channel: "line", ...result };
     },
-    sendMedia: async ({ to, text, mediaUrl, accountId }) => {
+    sendMedia: async ({ cfg, to, text, mediaUrl, accountId }) => {
       const send = getLineRuntime().channel.line.sendMessageLine;
       const result = await send(to, text, {
         verbose: false,
         mediaUrl,
+        cfg,
         accountId: accountId ?? undefined,
       });
       return { channel: "line", ...result };
@@ -596,17 +608,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
       }
       return issues;
     },
-    buildChannelSummary: ({ snapshot }) => ({
-      configured: snapshot.configured ?? false,
-      tokenSource: snapshot.tokenSource ?? "none",
-      running: snapshot.running ?? false,
-      mode: snapshot.mode ?? null,
-      lastStartAt: snapshot.lastStartAt ?? null,
-      lastStopAt: snapshot.lastStopAt ?? null,
-      lastError: snapshot.lastError ?? null,
-      probe: snapshot.probe,
-      lastProbeAt: snapshot.lastProbeAt ?? null,
-    }),
+    buildChannelSummary: ({ snapshot }) => buildTokenChannelStatusSummary(snapshot),
     probeAccount: async ({ account, timeoutMs }) =>
       getLineRuntime().channel.line.probeLineBot(account.channelAccessToken, timeoutMs),
     buildAccountSnapshot: ({ account, runtime, probe }) => {
@@ -661,7 +663,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
 
       ctx.log?.info(`[${account.accountId}] starting LINE provider${lineBotLabel}`);
 
-      return getLineRuntime().channel.line.monitorLineProvider({
+      const monitor = await getLineRuntime().channel.line.monitorLineProvider({
         channelAccessToken: token,
         channelSecret: secret,
         accountId: account.accountId,
@@ -670,6 +672,8 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
         abortSignal: ctx.abortSignal,
         webhookPath: account.config.webhookPath,
       });
+
+      return monitor;
     },
     logoutAccount: async ({ accountId, cfg }) => {
       const envToken = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim() ?? "";

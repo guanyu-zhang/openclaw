@@ -2,11 +2,6 @@ import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { truncateText } from "./format.ts";
 
-marked.setOptions({
-  gfm: true,
-  breaks: true,
-});
-
 const allowedTags = [
   "a",
   "b",
@@ -14,7 +9,6 @@ const allowedTags = [
   "br",
   "code",
   "del",
-  "details",
   "em",
   "h1",
   "h2",
@@ -27,7 +21,6 @@ const allowedTags = [
   "p",
   "pre",
   "strong",
-  "summary",
   "table",
   "tbody",
   "td",
@@ -117,9 +110,20 @@ export function toSanitizedMarkdownHtml(markdown: string): string {
     }
     return sanitized;
   }
-  const rendered = marked.parse(`${truncated.text}${suffix}`, {
-    renderer: htmlEscapeRenderer,
-  }) as string;
+  let rendered: string;
+  try {
+    rendered = marked.parse(`${truncated.text}${suffix}`, {
+      renderer: htmlEscapeRenderer,
+      gfm: true,
+      breaks: true,
+    }) as string;
+  } catch (err) {
+    // Fall back to escaped plain text when marked.parse() throws (e.g.
+    // infinite recursion on pathological markdown patterns — #36213).
+    console.warn("[markdown] marked.parse failed, falling back to plain text:", err);
+    const escaped = escapeHtml(`${truncated.text}${suffix}`);
+    rendered = `<pre class="code-block">${escaped}</pre>`;
+  }
   const sanitized = DOMPurify.sanitize(rendered, sanitizeOptions);
   if (input.length <= MARKDOWN_CACHE_MAX_CHARS) {
     setCachedMarkdown(input, sanitized);
@@ -133,35 +137,6 @@ export function toSanitizedMarkdownHtml(markdown: string): string {
 // pages) as formatted output is confusing UX (#13937).
 const htmlEscapeRenderer = new marked.Renderer();
 htmlEscapeRenderer.html = ({ text }: { text: string }) => escapeHtml(text);
-
-htmlEscapeRenderer.code = ({
-  text,
-  lang,
-  escaped,
-}: {
-  text: string;
-  lang?: string;
-  escaped?: boolean;
-}) => {
-  const langClass = lang ? ` class="language-${lang}"` : "";
-  const safeText = escaped ? text : escapeHtml(text);
-  const codeBlock = `<pre><code${langClass}>${safeText}</code></pre>`;
-
-  const trimmed = text.trim();
-  const isJson =
-    lang === "json" ||
-    (!lang &&
-      ((trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-        (trimmed.startsWith("[") && trimmed.endsWith("]"))));
-
-  if (isJson) {
-    const lineCount = text.split("\n").length;
-    const label = lineCount > 1 ? `JSON &middot; ${lineCount} lines` : "JSON";
-    return `<details class="json-collapse"><summary>${label}</summary>${codeBlock}</details>`;
-  }
-
-  return codeBlock;
-};
 
 function escapeHtml(value: string): string {
   return value
