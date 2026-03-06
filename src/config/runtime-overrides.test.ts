@@ -32,6 +32,77 @@ describe("runtime overrides", () => {
     expect(next.channels?.whatsapp?.allowFrom).toEqual(["+1"]);
   });
 
+  it("merges indexed array overrides without clobbering other array items", () => {
+    const cfg = {
+      agents: {
+        list: [
+          {
+            id: "main",
+            runtime: { type: "subagent" },
+          },
+          {
+            id: "helper",
+          },
+        ],
+      },
+    } as OpenClawConfig;
+
+    setConfigOverride("agents.list[0].id", "patched-main");
+
+    const next = applyConfigOverrides(cfg);
+    expect(Array.isArray(next.agents?.list)).toBe(true);
+    expect(next.agents?.list?.[0]).toMatchObject({
+      id: "patched-main",
+      runtime: { type: "subagent" },
+    });
+    expect(next.agents?.list?.[1]).toMatchObject({ id: "helper" });
+  });
+
+  it("treats numeric-key object overrides as array patches", () => {
+    const cfg = {
+      agents: {
+        list: [{ id: "main", runtime: { type: "subagent" } }, { id: "helper" }],
+      },
+    } as OpenClawConfig;
+
+    setConfigOverride("agents.list", {
+      0: { id: "patched-main" },
+    });
+
+    const next = applyConfigOverrides(cfg);
+    expect(next.agents?.list?.[0]).toMatchObject({
+      id: "patched-main",
+      runtime: { type: "subagent" },
+    });
+    expect(next.agents?.list?.[1]).toMatchObject({ id: "helper" });
+  });
+
+  it("merges numeric object keys into array indexes", () => {
+    const cfg = {
+      agents: {
+        list: [
+          {
+            id: "main",
+            runtime: { type: "subagent" },
+          },
+          {
+            id: "helper",
+          },
+        ],
+      },
+    } as OpenClawConfig;
+
+    setConfigOverride("agents.list.0.id", "patched-main");
+
+    const next = applyConfigOverrides(cfg);
+    expect(Array.isArray(next.agents?.list)).toBe(true);
+    expect(next.agents?.list?.[0]).toMatchObject({
+      id: "patched-main",
+      runtime: { type: "subagent" },
+    });
+    expect(next.agents?.list?.[1]).toMatchObject({ id: "helper" });
+  });
+
   it("unsets overrides and prunes empty branches", () => {
     setConfigOverride("channels.whatsapp.dmPolicy", "open");
     const removed = unsetConfigOverride("channels.whatsapp.dmPolicy");
