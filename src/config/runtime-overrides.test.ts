@@ -58,6 +58,24 @@ describe("runtime overrides", () => {
     expect(next.agents?.list?.[1]).toMatchObject({ id: "helper" });
   });
 
+  it("merges sparse array index overrides without scanning missing entries", () => {
+    const cfg = {
+      agents: {
+        list: [{ id: "agent-0" }, { id: "agent-1" }, { id: "agent-2" }, { id: "agent-3" }],
+      },
+    } as OpenClawConfig;
+
+    setConfigOverride("agents.list[3].id", "patched-agent-3");
+
+    const next = applyConfigOverrides(cfg);
+    expect(next.agents?.list).toEqual([
+      { id: "agent-0" },
+      { id: "agent-1" },
+      { id: "agent-2" },
+      { id: "patched-agent-3" },
+    ]);
+  });
+
   it("treats numeric-key object overrides as array patches", () => {
     const cfg = {
       agents: {

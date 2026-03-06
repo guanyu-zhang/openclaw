@@ -43,8 +43,9 @@ function mergeOverrides(base: unknown, override: unknown): unknown {
     }
 
     const next = [...base];
-    for (let idx = 0; idx < override.length; idx += 1) {
-      if (!(idx in override)) {
+    for (const key of Object.keys(override)) {
+      const idx = parseArrayIndexKey(key);
+      if (idx === undefined) {
         continue;
       }
       const value = override[idx];
